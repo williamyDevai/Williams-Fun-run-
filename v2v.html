@@ -721,15 +721,6 @@ tr:hover td{background:rgba(255,255,255,0.018);}
     </div>
   </div>
 
-  <!-- Summary bar detail popover -->
-  <div id="sbar-popover" style="display:none;position:fixed;z-index:7000;background:var(--bg-card);border:1px solid var(--border-strong);border-radius:var(--r-lg);padding:16px 18px;min-width:260px;max-width:340px;box-shadow:0 8px 40px rgba(0,0,0,0.5);">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-      <div id="sbar-pop-title" style="font-family:'DM Mono',monospace;font-size:13px;font-weight:700;"></div>
-      <button onclick="closeSbarDetail()" style="background:none;border:none;color:var(--text-secondary);font-size:16px;cursor:pointer;padding:2px 4px;">✕</button>
-    </div>
-    <div id="sbar-pop-body"></div>
-  </div>
-
   <!-- Nav -->
   <div class="nav">
     <button class="nav-tab" onclick="switchTab('dashboard')"><span class="nav-icon">📊</span>Dashboard</button>
@@ -6733,13 +6724,17 @@ function showSbarDetail(type) {
 
   body.innerHTML = html;
 
-  // Position below the clicked item
+  // Position below the clicked item — use viewport coords (popover is body-level)
   const item = document.querySelector(`[onclick="showSbarDetail('${type}')"]`);
-  const rect  = item ? item.getBoundingClientRect() : {left:0, bottom:0};
+  const rect  = item ? item.getBoundingClientRect() : {left:20, bottom:80, right:200};
+  const popW  = 360;
   let left = rect.left;
-  if (left + 350 > window.innerWidth) left = window.innerWidth - 358;
-  pop.style.left = Math.max(8, left) + 'px';
-  pop.style.top  = (rect.bottom + 6) + 'px';
+  // Clamp so popover doesn't overflow right edge
+  if (left + popW > window.innerWidth - 8) left = window.innerWidth - popW - 8;
+  left = Math.max(8, left);
+  pop.style.left  = left + 'px';
+  pop.style.right = 'auto';
+  pop.style.top   = (rect.bottom + 8) + 'px';
   pop.style.display = 'block';
 
   // Close on outside click
@@ -8029,5 +8024,22 @@ function installPWA() {
   }
 }
 </script>
+<!-- Summary bar detail popover — at body level so position:fixed is viewport-relative -->
+<div id="sbar-popover" style="display:none;position:fixed;z-index:9500;min-width:270px;max-width:360px;
+  background:linear-gradient(155deg,rgba(18,22,46,0.97),rgba(10,14,30,0.98));
+  backdrop-filter:blur(24px) saturate(180%);
+  -webkit-backdrop-filter:blur(24px) saturate(180%);
+  border:1px solid rgba(255,255,255,0.10);
+  border-radius:18px;padding:18px 20px;
+  box-shadow:0 16px 56px rgba(0,0,0,0.6),0 0 0 0.5px rgba(255,255,255,0.05),inset 0 1px 0 rgba(255,255,255,0.07);
+  animation:float-in 0.18s cubic-bezier(0.22,1,0.36,1);">
+  <div style="position:absolute;top:0;left:0;right:0;height:1px;border-radius:18px 18px 0 0;
+    background:linear-gradient(90deg,transparent,rgba(240,81,74,0.4) 25%,rgba(255,207,61,0.3) 50%,rgba(94,179,255,0.3) 75%,transparent);"></div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+    <div id="sbar-pop-title" style="font-family:'DM Mono',monospace;font-size:13px;font-weight:700;letter-spacing:-0.01em;"></div>
+    <button onclick="closeSbarDetail()" style="background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.08);border-radius:6px;color:var(--t2);font-size:14px;cursor:pointer;padding:3px 8px;line-height:1;transition:all 0.15s;" onmouseover="this.style.background='rgba(255,255,255,0.1)'" onmouseout="this.style.background='rgba(255,255,255,0.06)'">✕</button>
+  </div>
+  <div id="sbar-pop-body"></div>
+</div>
 </body>
 </html>
