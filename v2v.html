@@ -4360,7 +4360,8 @@ function updateSummaryBar() {
     const tsap=sales.reduce((s,x)=>s+saleProfit(x),0);
     const tr=tsr+tsar, gp=tsp+tsap;
     const exp=expenses.reduce((s,e)=>s+e.amount,0);
-    const np=gp-exp, nm=tr>0?(np/tr*100):0;
+    const capEx=expenses.filter(e=>e.category==='Equipment').reduce((s,e)=>s+e.amount,0);
+    const np=gp-(exp-capEx), nm=tr>0?(np/tr*100):0; // net profit = operating only (capex/equipment excluded)
     const te=shows.reduce((s,x)=>s+showEquity(x),0)
              +inventory.filter(c=>c.status!=='Sold').reduce((s,c)=>s+(c.value-c.cost),0);
     const mc=nm>=30?'cg':nm>=15?'ca':'cr';
@@ -4537,7 +4538,8 @@ function renderDashboard() {
   const tsap=sales.reduce((s,x)=>s+saleProfit(x),0);
   const tr=tsr+tsar, gp=tsp+tsap;
   const exp=expenses.reduce((s,e)=>s+e.amount,0);
-  const np=gp-exp, nm=tr>0?(nm2=np/tr*100,nm2):0;
+  const capEx=expenses.filter(e=>e.category==='Equipment').reduce((s,e)=>s+e.amount,0);
+  const np=gp-(exp-capEx), nm=tr>0?(nm2=np/tr*100,nm2):0; // net profit = operating only (capex excluded)
   const te=shows.reduce((s,x)=>s+showEquity(x),0);
   const mc=np>=0?'cg':'cr', mmc=nm>=30?'cg':nm>=15?'ca':'cr';
 
@@ -5930,9 +5932,15 @@ function renderBusiness() {
   const totalSaleProfit = sales.reduce((s,x)=>s+saleProfit(x),0);
   const totalRev        = totalShowRev + totalSaleRev;
   const totalCOGS       = shows.reduce((s,x)=>s+x.cogs,0) + shows.reduce((s,x)=>s+x.fee,0) + sales.reduce((s,x)=>s+x.cost+x.fees,0);
-  const totalExpenses   = expenses.reduce((s,e)=>s+e.amount,0);
+  // Split one-time capital expenses (equipment/gear) out of operating expenses.
+  // Capex is a retained asset, so it shouldn't drag operating net profit or run-rate.
+  const CAPEX_CATEGORIES = ['Equipment'];
+  const capEx           = expenses.filter(e=>CAPEX_CATEGORIES.includes(e.category)).reduce((s,e)=>s+e.amount,0);
+  const opEx            = expenses.reduce((s,e)=>s+e.amount,0) - capEx;
+  const totalExpenses   = opEx + capEx;            // all spend (kept for total-outflow displays)
   const grossProfit     = totalShowProfit + totalSaleProfit;
-  const netProfit       = grossProfit - totalExpenses;
+  const netProfit       = grossProfit - opEx;      // operating net profit (excludes one-time gear)
+  const netAfterCapex   = netProfit - capEx;       // bottom line including equipment
   const grossMargin     = totalRev > 0 ? (grossProfit/totalRev*100) : 0;
   const netMargin       = totalRev > 0 ? (netProfit/totalRev*100) : 0;
 
@@ -5947,13 +5955,13 @@ function renderBusiness() {
   const totalEquity     = totalInvValue - totalInvCost;
 
   // Business net worth = cash profit + inventory equity
-  const netWorth = netProfit + totalEquity;
+  const netWorth = netAfterCapex + totalEquity;
 
   document.getElementById('biz-metrics').innerHTML = `
     <div class="metric"><div class="metric-label">Total revenue</div><div class="metric-value cg">${fmtK(totalRev)}</div><div class="metric-sub">All channels</div><div class="metric-bar" style="background:linear-gradient(90deg,var(--green),transparent);"></div></div>
     <div class="metric"><div class="metric-label">Gross profit</div><div class="metric-value cg">${fmtK(grossProfit)}</div><div class="metric-sub">${pct(grossMargin)} margin</div><div class="metric-bar" style="background:linear-gradient(90deg,var(--cyan),transparent);"></div></div>
-    <div class="metric"><div class="metric-label">Total expenses</div><div class="metric-value cr">${fmtK(totalExpenses)}</div><div class="metric-sub">Operating costs</div><div class="metric-bar" style="background:linear-gradient(90deg,var(--red),transparent);"></div></div>
-    <div class="metric"><div class="metric-label">Net profit</div><div class="metric-value ${netProfit>=0?'cg':'cr'}">${netProfit>=0?'+':''}${fmtK(netProfit)}</div><div class="metric-sub">${pct(netMargin)} net margin</div><div class="metric-bar" style="background:linear-gradient(90deg,var(--purple),transparent);"></div></div>
+    <div class="metric"><div class="metric-label">Operating expenses</div><div class="metric-value cr">${fmtK(opEx)}</div><div class="metric-sub">${capEx>0?fmtK(capEx)+' capex (gear) separate':'excl. equipment'}</div><div class="metric-bar" style="background:linear-gradient(90deg,var(--red),transparent);"></div></div>
+    <div class="metric"><div class="metric-label">Net profit</div><div class="metric-value ${netProfit>=0?'cg':'cr'}">${netProfit>=0?'+':''}${fmtK(netProfit)}</div><div class="metric-sub">${pct(netMargin)} margin · operating</div><div class="metric-bar" style="background:linear-gradient(90deg,var(--purple),transparent);"></div></div>
     <div class="metric"><div class="metric-label">Inventory equity</div><div class="metric-value cb">${fmtK(totalEquity)}</div><div class="metric-sub">Unrealized value</div><div class="metric-bar" style="background:linear-gradient(90deg,var(--cyan),transparent);"></div></div>
     <div class="metric"><div class="metric-label">Business net worth</div><div class="metric-value ${netWorth>=0?'cg':'cr'}" style="font-size:17px;">${netWorth>=0?'+':''}${fmtK(netWorth)}</div><div class="metric-sub">Profit + equity</div><div class="metric-bar" style="background:linear-gradient(90deg,var(--gold),transparent);"></div></div>
   `;
@@ -5970,8 +5978,10 @@ function renderBusiness() {
   // P&L Summary
   document.getElementById('biz-pl-summary').innerHTML = `
     <div class="row"><span class="row-label">Gross profit</span><span class="cg" style="font-weight:600;">+${fmt(grossProfit)}</span></div>
-    <div class="row"><span class="row-label">Operating expenses</span><span class="cr">-${fmt(totalExpenses)}</span></div>
-    <div class="total-row"><span>Net profit (cash)</span><span class="${netProfit>=0?'cg':'cr'}">${netProfit>=0?'+':''}${fmt(netProfit)}</span></div>
+    <div class="row"><span class="row-label">Operating expenses</span><span class="cr">-${fmt(opEx)}</span></div>
+    <div class="total-row"><span>Net profit (operating)</span><span class="${netProfit>=0?'cg':'cr'}">${netProfit>=0?'+':''}${fmt(netProfit)}</span></div>
+    ${capEx>0?`<div class="row"><span class="row-label">Capital expenses (equipment)</span><span class="ca">-${fmt(capEx)}</span></div>
+    <div class="total-row"><span>Net after capex</span><span class="${netAfterCapex>=0?'cg':'cr'}">${netAfterCapex>=0?'+':''}${fmt(netAfterCapex)}</span></div>`:''}
     <div style="height:1px;background:var(--border);margin:10px 0;"></div>
     <div class="row"><span class="row-label">Inventory market value</span><span class="cb">${fmt(totalInvValue)}</span></div>
     <div class="row"><span class="row-label">Inventory cost basis</span><span class="ca">-${fmt(totalInvCost)}</span></div>
@@ -6001,7 +6011,7 @@ function renderBusiness() {
   const runRate = monthlyRev * 12;
   const goalPct = Math.min(100, (runRate/100000*100)).toFixed(0);
   document.getElementById('biz-networth').innerHTML = `
-    <div class="row"><span class="row-label">Cash profit earned</span><span class="cg" style="font-weight:600;">+${fmt(netProfit)}</span></div>
+    <div class="row"><span class="row-label">Cash profit (after capex)</span><span class="${netAfterCapex>=0?'cg':'cr'}" style="font-weight:600;">${netAfterCapex>=0?'+':''}${fmt(netAfterCapex)}</span></div>
     <div class="row"><span class="row-label">Inventory equity</span><span class="cp" style="font-weight:600;">+${fmt(totalEquity)}</span></div>
     <div class="total-row"><span>Total net worth</span><span class="${netWorth>=0?'cg':'cr'}">${netWorth>=0?'+':''}${fmt(netWorth)}</span></div>
     <div style="height:1px;background:var(--border);margin:10px 0;"></div>
@@ -6675,8 +6685,10 @@ function showSbarDetail(type) {
   const tsap = sales.reduce((s,x)=>s+saleProfit(x),0);
   const tr   = tsr+tsar;
   const gp   = tsp+tsap;
-  const exp  = expenses.reduce((s,e)=>s+e.amount,0);
-  const np   = gp-exp;
+  const capEx= expenses.filter(e=>e.category==='Equipment').reduce((s,e)=>s+e.amount,0);
+  const opEx = expenses.reduce((s,e)=>s+e.amount,0)-capEx;
+  const exp  = opEx+capEx;
+  const np   = gp-opEx; // operating net profit (capex/equipment shown separately)
   const nm   = tr>0?(np/tr*100):0;
 
   const row = (label, val, cls='', sub='') =>
@@ -6725,13 +6737,21 @@ function showSbarDetail(type) {
     html += row('Sale costs', '-'+fmt(sales.reduce((s,x)=>s+x.cost,0)), 'red');
     html += row('Sale fees', '-'+fmt(sales.reduce((s,x)=>s+(x.fees||0),0)), 'red');
     html += row('Gross profit', fmt(gp), gp>=0?'green':'red');
-    html += divider('Expenses');
-    expenses.forEach(e => { html += row(e.desc, '-'+fmt(e.amount), 'red', e.category); });
-    if (!expenses.length) html += `<div style="font-size:11px;color:var(--text-dim);padding:4px 0;">No expenses logged</div>`;
+    html += divider('Operating expenses');
+    expenses.filter(e=>e.category!=='Equipment').forEach(e => { html += row(e.desc, '-'+fmt(e.amount), 'red', e.category); });
+    if (!expenses.filter(e=>e.category!=='Equipment').length) html += `<div style="font-size:11px;color:var(--text-dim);padding:4px 0;">No operating expenses</div>`;
     html += `<div style="display:flex;justify-content:space-between;padding:8px 0 0;border-top:1px solid var(--border-strong);margin-top:4px;">
-      <span style="font-family:'DM Mono',monospace;font-weight:700;">Net profit</span>
+      <span style="font-family:'DM Mono',monospace;font-weight:700;">Net profit (operating)</span>
       <span style="font-family:'DM Mono',monospace;font-size:16px;font-weight:800;color:${np>=0?'var(--green)':'var(--red)'};">${np>=0?'+':''}${fmt(np)}</span>
     </div>`;
+    if (capEx>0) {
+      html += divider('Capital — equipment');
+      expenses.filter(e=>e.category==='Equipment').forEach(e => { html += row(e.desc, '-'+fmt(e.amount), 'red', e.category); });
+      html += `<div style="display:flex;justify-content:space-between;padding:8px 0 0;border-top:1px solid var(--border-strong);margin-top:4px;">
+        <span style="font-family:'DM Mono',monospace;font-weight:700;">Net after capex</span>
+        <span style="font-family:'DM Mono',monospace;font-size:16px;font-weight:800;color:${(np-capEx)>=0?'var(--green)':'var(--red)'};">${(np-capEx)>=0?'+':''}${fmt(np-capEx)}</span>
+      </div>`;
+    }
   }
 
   else if (type === 'margin') {
